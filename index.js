@@ -2,7 +2,7 @@
 const Queue = require('double-ended-queue');
 
 type TaskRet = any;
-type Task = (depRets?:Array<TaskRet>) => Promise<TaskRet>;
+type Task = (depRets?:{ [taskKey:string]: any }) => Promise<TaskRet>;
 type TaskRec = {
   key: string,
   task: Task,
@@ -55,9 +55,10 @@ function insert(root:TaskRec, rec:TaskRec, depKeys?:Array<string>, depi: number 
 
   let recRef = rec;
   let useExisting = false;
-  if (depi <= 0) {
-    traverse(root, (node) => {
-      if (node.key === rec.key) {
+  if (depi <= 0 && root.nexts) {
+      root.nexts && Object.keys(root.nexts).findIndex((kk) => {
+      const node = root.nexts && root.nexts[kk]; // to make flow happy
+      if (node && node.key === rec.key) {
         if (node !== rec) {
           Object.assign(node, rec);
         }
@@ -65,6 +66,7 @@ function insert(root:TaskRec, rec:TaskRec, depKeys?:Array<string>, depi: number 
         useExisting = true;
         return true;
       }
+      return false;
     });
   }
 
@@ -84,7 +86,9 @@ function insert(root:TaskRec, rec:TaskRec, depKeys?:Array<string>, depi: number 
       dep = node;
       return true;
     }
+    return false;
   });
+
   if (dep) {
     addDep(dep, recRef);
   } else {
@@ -93,8 +97,11 @@ function insert(root:TaskRec, rec:TaskRec, depKeys?:Array<string>, depi: number 
     addDep(dummyDep, recRef);
   }
 
-  if (root.nexts[recRef.key]) {
+  if (root.nexts && root.nexts[recRef.key]) {
     delete root.nexts[recRef.key];
+  }
+  if (recRef.deps && recRef.deps[root.key]) {
+    delete recRef.deps[root.key];
   }
 
   insert(root, rec, depKeys, depi + 1);
@@ -105,7 +112,7 @@ function addDep(dependant:TaskRec, depender:TaskRec) {
   dependant.nexts = { ...dependant.nexts || {}, [depender.key]: depender };
 }
 
-function traverseBfs(root:TaskRec, visitor:TraverseVisitor) {
+function traverseBfs(root:TaskRec, visitor:(node:TaskRec) => void) {
   if (!root) return;
   const q = new Queue();
   q.push(root);
@@ -116,7 +123,9 @@ function traverseBfs(root:TaskRec, visitor:TraverseVisitor) {
       Object.keys(task.nexts).forEach(
         (key) => {
           const n = task.nexts[key];
-          q.push(n);
+          if (n.deps && Object.keys(n.deps).every(kk => !!n.deps[kk].result)) {
+            q.push(n);
+          }
         }
       );
     }
@@ -136,7 +145,7 @@ export default class TaskScheduler {
     };
   }
 
-  addTask(name:string, task:Task, deps?:[string]) {
+  addTask(name:string, task:Task, deps?:Array<string>) {
     if (this.hasRun) {
       throw new Error('cannot add task after started');
     }
@@ -160,6 +169,9 @@ export default class TaskScheduler {
         return;
       }
       const { task, deps, result } = rec;
+      // todo: this is to make flow happy, because all node have deps except root
+      if (!deps) return;
+
       if (!!result) return;
 
       const depKeys = Object.keys(deps);
@@ -176,6 +188,7 @@ export default class TaskScheduler {
         .then(task);
       ret.push(rec);
     });
+
     return Promise.all(ret.map(rt => rt.result))
     .then((resultsArr) => {
       return ret.reduce(
