@@ -15,5 +15,11 @@
   "bugs": {
     "url": "https://github.com/bestofsong/sstask/issues"
   },
-  "homepage": "https://github.com/bestofsong/sstask#readme"
+  "homepage": "https://github.com/bestofsong/sstask#readme",
+  "devDependencies": {
+    "flow-bin": "^0.51.0"
+  },
+  "dependencies": {
+    "double-ended-queue": "^2.1.0-0"
+  }
 }
