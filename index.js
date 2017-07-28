@@ -7,27 +7,11 @@ type TaskRec = {
   key: string,
   task: Task,
   result?: Promise<TaskRet>,
-  deps?: { [key:string]: <TaskRec> },
-  nexts?: { [key:string]: <TaskRec> },
+  deps?: Object,
+  nexts?: Object,
 };
 
 const DUMMY_TASK = () => Promise.resolve();
-
-function isTaskReady(task:TaskRec) {
-  if (!task) {
-    throw new Error('wtf 1');
-  }
-  if (!task.deps) {
-    return true;
-  }
-  if (!Object.keys(task.deps).length) {
-    return true;
-  }
-  return Object.keys(task.deps).every((key) => {
-    const tt = task.deps[key];
-    return !!tt.result;
-  });
-}
 
 type TraverseVisitor = (node:TaskRec) => bool;
 // TraverseVisitor return true to stop
@@ -42,7 +26,7 @@ function traverse(root:TaskRec, callback:TraverseVisitor): bool {
     return true;
   }
   const nextKeys = Object.keys(root.nexts);
-  for (let ii = 0; ii < nextKeys.length: ii++) {
+  for (let ii = 0; ii < nextKeys.length; ii++) {
     const key = nextKeys[ii];
     const next = root.nexts[key];
     if (!traverse(next, callback)) {
@@ -70,6 +54,7 @@ function insert(root:TaskRec, rec:TaskRec, depKeys?:Array<string>, depi: number 
   //       dep on that dummy node
 
   let recRef = rec;
+  let useExisting = false;
   if (depi <= 0) {
     traverse(root, (node) => {
       if (node.key === rec.key) {
@@ -77,11 +62,11 @@ function insert(root:TaskRec, rec:TaskRec, depKeys?:Array<string>, depi: number 
           Object.assign(node, rec);
         }
         recRef = node;
+        useExisting = true;
         return true;
       }
     });
   }
-  const useExisting = recRef === rec;
 
   const key = depKeys && depKeys[depi];
   if (!key && useExisting) {
@@ -108,6 +93,10 @@ function insert(root:TaskRec, rec:TaskRec, depKeys?:Array<string>, depi: number 
     addDep(dummyDep, recRef);
   }
 
+  if (root.nexts[recRef.key]) {
+    delete root.nexts[recRef.key];
+  }
+
   insert(root, rec, depKeys, depi + 1);
 }
 
@@ -121,12 +110,12 @@ function traverseBfs(root:TaskRec, visitor:TraverseVisitor) {
   const q = new Queue();
   q.push(root);
   while(!q.isEmpty()) {
-    const task = q.pop();
+    const task = q.shift();
     visitor(task);
-    if (q.nexts) {
-      Object.keys(q.nexts).forEach(
+    if (task.nexts) {
+      Object.keys(task.nexts).forEach(
         (key) => {
-          const n = q.nexts[key];
+          const n = task.nexts[key];
           q.push(n);
         }
       );
@@ -138,7 +127,7 @@ const ROOT_KEY = '__ROOT_TASK_KEY_SHOULD_NOT_BE_USED_BY_USER__';
 
 export default class TaskScheduler {
   hasRun: bool
-  root:TaskRec,
+  root:TaskRec
 
   constructor() {
     this.root = {
@@ -154,22 +143,50 @@ export default class TaskScheduler {
     if (!name || typeof task !== 'function') {
       throw new Error('invalid args');
     }
-    insert(this.root, { key:name, task }, deps, 0);
+    const t = { key:name, task };
+    insert(this.root, t, deps, 0);
   }
 
   start(): Promise<*> {
     if (this.hasRun) {
-      throw new Error('cannot start twice');
+      throw new Error('cannot start more than once');
     }
     this.hasRun = true;
     const ret = [];
+    this.root.result = this.root.task();
+
     traverseBfs(this.root, (rec) => {
-      const { task } = rec;
-      rec.result = task();
-      if (!rec.nexts || !Object.keys(rec.nexts).length) {
-        ret.push(rec.result);
+      if (rec === this.root) {
+        return;
       }
+      const { task, deps, result } = rec;
+      if (!!result) return;
+
+      const depKeys = Object.keys(deps);
+      rec.result = Promise.all(depKeys.map(k => deps[k].result))
+        .then((depRes) => {
+          return depKeys.reduce(
+            (res, it, ii) => ({
+              ...res,
+              [it]: depRes[ii],
+            }),
+            {}
+          )
+        })
+        .then(task);
+      ret.push(rec);
     });
-    return Promise.all(ret);
+    return Promise.all(ret.map(rt => rt.result))
+    .then((resultsArr) => {
+      return ret.reduce(
+        (res, it, ii) => {
+          return {
+            ...res,
+            [it.key]: resultsArr[ii],
+          };
+        },
+        {}
+      );
+    });
   }
 }
