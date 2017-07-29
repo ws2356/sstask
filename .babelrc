@@ -1,4 +1,4 @@
 {
-  "presets": ["es2015", "flow"],
+  "presets": ["babel-preset-es2015", "babel-preset-flow"],
   "plugins": ["transform-es2015-destructuring", "transform-object-rest-spread"]
 }
