@@ -105,7 +105,7 @@ function insert(root:TaskRec, rec:TaskRec, depKeys?:Array<string>, depi: number 
     delete recRef.deps[root.key];
   }
 
-  insert(root, rec, depKeys, depi + 1);
+  insert(root, recRef, depKeys, depi + 1);
 }
 
 function addDep(dependant:TaskRec, depender:TaskRec) {

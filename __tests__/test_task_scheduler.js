@@ -768,12 +768,12 @@ describe('test task scheduler', function () {
 
       ts.addTask('task2', mockTask2, ['task1']);
       ts.addTask('task1', mockTask1);
+      ts.addTask('task5', mockTask5, ['task2']);
+      ts.addTask('task7', mockTask7, ['task4', 'task6']);
       ts.addTask('task4', mockTask4, ['task1']);
       ts.addTask('task3', mockTask3, ['task1']);
 
       ts.addTask('task6', mockTask6, ['task5', 'task4', 'task2', 'task3']);
-      ts.addTask('task5', mockTask5, ['task2']);
-      ts.addTask('task7', mockTask7, ['task4', 'task6']);
 
       return ts.start()
       .then((results) => {
