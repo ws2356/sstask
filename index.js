@@ -138,16 +138,12 @@ function buildGtask(root:Task) {
     root.result = root.task();
 
     traverseBfs(root, (rec) => {
-      if (rec === root) {
-        return;
-      }
+      if (rec === root) return;
       const { task, deps, result } = rec;
       // todo: this is to make flow happy, because all node have deps except root
       if (!deps) return;
-
       if (!!result) {
         throw new Error('should not happen: dependency graph traverse error');
-        return;
       }
 
       const depKeys = Object.keys(deps);
@@ -210,8 +206,8 @@ export default class TaskScheduler {
     };
   }
 
-  addTask(name:string, task:Task, deps?:Array<string>) {
-    if (this.hasRun) {
+  addTask(name:string, task:Task, deps?:Array<string>, beforeRun:bool = true): TaskRec {
+    if (beforeRun && this.hasRun) {
       throw new Error('cannot add task after started');
     }
     if (!name || typeof task !== 'function') {
@@ -219,12 +215,43 @@ export default class TaskScheduler {
     }
     const t = {
       key:name,
-      task: (...args) => {
-        t.taskHasRun = true;
-        return task(...args);
-      },
+      task,
     };
     insert(this.root, t, deps, 0);
+    return t;
+  }
+
+  addTaskLate(name:string, task:Task, deps?:Array<string>) {
+    if (!this.hasRun) {
+      throw new Error('this is used to add a task after scheduler has already run!');
+    }
+    const rec = this.addTask(name, task, deps, false);
+    if (!deps || !deps.length) return;
+
+    const depTasks = [];
+    traverse(this.root, (node) => {
+      if (deps.indexOf(node.key) >= 0) {
+        depTasks.push(node);
+      }
+    });
+
+    rec.result = Promise.all(depTasks.map(it => it.result))
+    .then((resultsArr) => {
+      const results = resultsArr.reduce(
+        (res, it, ii) => ({  ...res, [depTasks[ii].key]: it }),
+        {}
+      );
+      return rec.task(results);
+    });
+
+    const originalResults = this.results;
+    this.results = rec.result
+    .then((res) => {
+      return originalResults
+      .then((others) => {
+        return { ...others || {}, [rec.key]: res };
+      });
+    });
   }
 
   start(): Promise<{[taskName:string]: TaskRet}> {
@@ -232,34 +259,12 @@ export default class TaskScheduler {
       throw new Error('cannot start more than once');
     }
     this.hasRun = true;
-    return buildGtask(this.root)
+    this.results = buildGtask(this.root)
     .then((results) => {
       this.hasRun = true;
       return results;
     });
+    return this.results; // just for convenient, this property can change
   }
 
-  // insertAfter(task:Task, afterTask:string) {
-  //   if (!this.hasRun) {
-  //     throw new Error(`tasks has not started yet, why not just add your task depending on ${afterTask}`);
-  //   }
-  //   if (this.hasFinished && !this.warnedFinish) {
-  //     this.warnedFinish = true;
-  //     console.warn('all tasks have finished already, you could have done this: tasks.start().then(yourTask)');
-  //   }
-  //   let thatTask = null;
-  //   traverse(this.root, (rec) => {
-  //     if (rec && rec.key === afterTask) {
-  //       thatTask = rec;
-  //       rec.result = rec.result.then((results) => {
-  //         return task(results).catch(() => null).then(() => results);
-  //       });
-  //       return true;
-  //     }
-  //   });
-  //   if (thatTask) {
-  //     rebuildGtask(thatTask, thatTask.result);
-  //   }
-  //   return !!thatTask;
-  // }
 }
