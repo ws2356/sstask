@@ -9,6 +9,7 @@ type TaskRec = {
   result?: Promise<TaskRet>,
   deps?: Object,
   nexts?: Object,
+  taskHasRun?: bool,
 };
 
 const DUMMY_TASK = () => Promise.resolve();
@@ -132,47 +133,22 @@ function traverseBfs(root:TaskRec, visitor:(node:TaskRec) => void) {
   }
 }
 
-const ROOT_KEY = '__ROOT_TASK_KEY_SHOULD_NOT_BE_USED_BY_USER__';
-
-export default class TaskScheduler {
-  hasRun: bool
-  root:TaskRec
-
-  constructor() {
-    this.root = {
-      key: ROOT_KEY,
-      task: () => Promise.resolve(),
-    };
-  }
-
-  addTask(name:string, task:Task, deps?:Array<string>) {
-    if (this.hasRun) {
-      throw new Error('cannot add task after started');
-    }
-    if (!name || typeof task !== 'function') {
-      throw new Error('invalid args');
-    }
-    const t = { key:name, task };
-    insert(this.root, t, deps, 0);
-  }
-
-  start(): Promise<*> {
-    if (this.hasRun) {
-      throw new Error('cannot start more than once');
-    }
-    this.hasRun = true;
+function buildGtask(root:Task) {
     const ret = [];
-    this.root.result = this.root.task();
+    root.result = root.task();
 
-    traverseBfs(this.root, (rec) => {
-      if (rec === this.root) {
+    traverseBfs(root, (rec) => {
+      if (rec === root) {
         return;
       }
       const { task, deps, result } = rec;
       // todo: this is to make flow happy, because all node have deps except root
       if (!deps) return;
 
-      if (!!result) return;
+      if (!!result) {
+        throw new Error('should not happen: dependency graph traverse error');
+        return;
+      }
 
       const depKeys = Object.keys(deps);
       rec.result = Promise.all(depKeys.map(k => deps[k].result))
@@ -201,5 +177,89 @@ export default class TaskScheduler {
         {}
       );
     });
+}
+
+// function rebuildGtask(node:TaskRec, rootResult) {
+//   if (!node) {
+//     throw new Error('wtf 3');
+//   }
+//   if (!rootResult) {
+//     throw new Error('wtf 4');
+//   }
+//   traverse(node, (rec) => {
+//     rec.result = undefined;
+//   });
+//   node.result = rootResult;
+//   traverse(node, (rec) => {
+//     rec.result = undefined;
+//   });
+// }
+
+const ROOT_KEY = '__ROOT_TASK_KEY_SHOULD_NOT_BE_USED_BY_USER__';
+
+export default class TaskScheduler {
+  hasRun: bool
+  hasFinished: bool
+  warnedFinish: bool
+  root:TaskRec
+
+  constructor() {
+    this.root = {
+      key: ROOT_KEY,
+      task: () => Promise.resolve(),
+    };
   }
+
+  addTask(name:string, task:Task, deps?:Array<string>) {
+    if (this.hasRun) {
+      throw new Error('cannot add task after started');
+    }
+    if (!name || typeof task !== 'function') {
+      throw new Error('invalid args');
+    }
+    const t = {
+      key:name,
+      task: (...args) => {
+        t.taskHasRun = true;
+        return task(...args);
+      },
+    };
+    insert(this.root, t, deps, 0);
+  }
+
+  start(): Promise<{[taskName:string]: TaskRet}> {
+    if (this.hasRun) {
+      throw new Error('cannot start more than once');
+    }
+    this.hasRun = true;
+    return buildGtask(this.root)
+    .then((results) => {
+      this.hasRun = true;
+      return results;
+    });
+  }
+
+  // insertAfter(task:Task, afterTask:string) {
+  //   if (!this.hasRun) {
+  //     throw new Error(`tasks has not started yet, why not just add your task depending on ${afterTask}`);
+  //   }
+  //   if (this.hasFinished && !this.warnedFinish) {
+  //     this.warnedFinish = true;
+  //     console.warn('all tasks have finished already, you could have done this: tasks.start().then(yourTask)');
+  //   }
+  //   let thatTask = null;
+  //   traverse(this.root, (rec) => {
+  //     if (rec && rec.key === afterTask) {
+  //       thatTask = rec;
+  //       rec.result = rec.result.then((results) => {
+  //         return task(results).catch(() => null).then(() => results);
+  //       });
+  //       return true;
+  //     }
+  //   });
+  //   if (thatTask) {
+  //     rebuildGtask(thatTask, thatTask.result);
+  //   }
+  //   return !!thatTask;
+  // }
 }
