@@ -1125,7 +1125,7 @@ describe('test task scheduler', function () {
       });
 
       const addLater = () => {
-        ts.addTaskLate('task8', mockTask8, ['task1', 'task7', 'task2', 'task3']);
+        ts.appendTask('task8', mockTask8, ['task1', 'task7', 'task2', 'task3']);
         resolveTask8Add(
           ts.results
             .then((results) => {

@@ -1,7 +1,13 @@
 // @flow
 const Queue = require('double-ended-queue');
 
+/**
+ * flow type: TaskRet = any
+ */
 type TaskRet = any;
+/**
+ * flow type: Task = (depRets?:{ [taskKey:string]: any }) => Promise&lt;TaskRet&gt;; 
+ */
 type Task = (depRets?:{ [taskKey:string]: any }) => Promise<TaskRet>;
 type TaskRec = {
   key: string,
@@ -176,8 +182,30 @@ function buildGtask(root:TaskRec) {
     });
 }
 
+function addTask(name:string, task:Task, deps?:Array<string>, beforeRun:bool = true): TaskRec {
+  if (beforeRun && this.hasRun) {
+    throw new Error('cannot add task after started');
+  }
+  if (!name || typeof task !== 'function') {
+    throw new Error('invalid args');
+  }
+  const t = {
+    key: name,
+    task,
+  };
+  insert(this.root, t, deps);
+  return t;
+}
+
+
 const ROOT_KEY = '__ROOT_TASK_KEY_SHOULD_NOT_BE_USED_BY_USER__';
 
+/**
+ * 
+ * 
+ * @export
+ * @class TaskScheduler
+ */
 export default class TaskScheduler {
   hasRun: bool
   hasFinished: bool
@@ -185,6 +213,10 @@ export default class TaskScheduler {
   root:TaskRec
   results: Promise<{ [key:string]: TaskRet }>
 
+  /**
+   * Creates an instance of TaskScheduler.
+   * @memberof TaskScheduler
+   */
   constructor() {
     this.root = {
       key: ROOT_KEY,
@@ -192,26 +224,33 @@ export default class TaskScheduler {
     };
   }
 
-  addTask(name:string, task:Task, deps?:Array<string>, beforeRun:bool = true): TaskRec {
-    if (beforeRun && this.hasRun) {
-      throw new Error('cannot add task after started');
-    }
-    if (!name || typeof task !== 'function') {
-      throw new Error('invalid args');
-    }
-    const t = {
-      key:name,
-      task,
-    };
-    insert(this.root, t, deps);
-    return t;
+  /**
+   * Add a task. Must be called before start() is called. Should not be called more than once for each task or all except the last one is effective.
+   * A task must return a promise, if a task is synchronous, just wrap the return value in a promise, like return Promise.resolve(whatEver);
+   * @param {string} name 
+   * @param {Task} task 
+   * @param {Array<string>} [deps] 
+   * @param {bool} [beforeRun=true] 
+   * @returns
+   * @memberof TaskScheduler
+   */
+  addTask(name:string, task:Task, deps?:Array<string>) {
+    addTask.call(this, name, task, deps, true);
   }
 
-  addTaskLate(name:string, task:Task, deps?:Array<string>) {
+  /**
+   * Add a task after start() is called. Name should not already be added previously otherwise the behaviour is not defined.
+   * @param {string} name 
+   * @param {Task} task 
+   * @param {Array<string>} [deps] 
+   * @returns 
+   * @memberof TaskScheduler
+   */
+  appendTask(name:string, task:Task, deps?:Array<string>) {
     if (!this.hasRun) {
       throw new Error('this is used to add a task after scheduler has already run!');
     }
-    const rec = this.addTask(name, task, deps, false);
+    const rec = addTask.call(this, name, task, deps, false);
     if (!deps || !deps.length) return;
 
     const depTasks = [];
@@ -240,6 +279,14 @@ export default class TaskScheduler {
     });
   }
 
+  /**
+   * Begin executing all tasks.
+   * Each task is executed only after its dependent tasks have already finished and receive their returned values as a 'taskName -> value' map in a single argument.
+   * Tasks that have no dependent tasks or all its depended tasks have finished will be executed concurrently.
+   * 
+   * @returns {Promise<{[taskName:string]: TaskRet}>}, the returned promise resolves to an object containing all the added tasks and is keeped as results property in a Scheduler instance. The property only changes if you call appendTask to include the return value of the new task.
+   * @memberof TaskScheduler
+   */
   start(): Promise<{[taskName:string]: TaskRet}> {
     if (this.hasRun) {
       throw new Error('cannot start more than once');
@@ -250,6 +297,6 @@ export default class TaskScheduler {
       this.hasRun = true;
       return results;
     });
-    return this.results; // just for convenient, this property can change
+    return this.results;
   }
 }
