@@ -25,4 +25,4 @@ scheduler.start()
 });
 
 ```
-## See more details in the [docs]('docs/index.md') and in the [unit tests](__tests__)
+## See more details in the [docs](docs/index.md) and in the [unit tests](__tests__)

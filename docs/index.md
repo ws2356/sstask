@@ -30,7 +30,7 @@ Creates an instance of TaskScheduler.
 
 ### addTask
 
-Add a task. Must be called before start() is called. Should not be called more than once for each task or all except the last one is effective.
+Add a task. Must be called before start() is called. Should not be called more than once for each task or all except the last one is effective. There is no requirements in the order in which tasks are added.
 A task must return a promise, if a task is synchronous, just wrap the return value in a promise, like return Promise.resolve(whatEver);
 
 **Parameters**
