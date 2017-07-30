@@ -9,7 +9,6 @@ type TaskRec = {
   result?: Promise<TaskRet>,
   deps?: Object,
   nexts?: Object,
-  taskHasRun?: bool,
 };
 
 const DUMMY_TASK = () => Promise.resolve();
@@ -115,7 +114,7 @@ function addDep(dependant:TaskRec, depender:TaskRec) {
   dependant.nexts = { ...dependant.nexts || {}, [depender.key]: depender };
 }
 
-function traverseBfs(root:TaskRec, visitor:(node:TaskRec) => void) {
+function traverseDepGraph(root:TaskRec, visitor:(node:TaskRec) => void) {
   if (!root) return;
   const q = new Queue();
   q.push(root);
@@ -139,7 +138,7 @@ function buildGtask(root:TaskRec) {
     const ret = [];
     root.result = root.task();
 
-    traverseBfs(root, (rec) => {
+    traverseDepGraph(root, (rec) => {
       if (rec === root) return;
       const { task, deps, result } = rec;
       // todo: this is to make flow happy, because all node have deps except root
@@ -176,22 +175,6 @@ function buildGtask(root:TaskRec) {
       );
     });
 }
-
-// function rebuildGtask(node:TaskRec, rootResult) {
-//   if (!node) {
-//     throw new Error('wtf 3');
-//   }
-//   if (!rootResult) {
-//     throw new Error('wtf 4');
-//   }
-//   traverse(node, (rec) => {
-//     rec.result = undefined;
-//   });
-//   node.result = rootResult;
-//   traverse(node, (rec) => {
-//     rec.result = undefined;
-//   });
-// }
 
 const ROOT_KEY = '__ROOT_TASK_KEY_SHOULD_NOT_BE_USED_BY_USER__';
 
@@ -269,5 +252,4 @@ export default class TaskScheduler {
     });
     return this.results; // just for convenient, this property can change
   }
-
 }
