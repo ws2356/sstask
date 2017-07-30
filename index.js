@@ -37,14 +37,10 @@ function traverse(root:TaskRec, callback:TraverseVisitor): bool {
   return true;
 }
 
-function insert(root:TaskRec, rec:TaskRec, depKeys?:Array<string>, depi: number = 0) {
+function insert(root:TaskRec, rec:TaskRec, depKeys?:Array<string>) {
   if (!root || !rec) {
     throw new Error('wtf 2');
   }
-  if (depKeys && depKeys.length <= depi) {
-    return;
-  }
-
   // find dummy self, merge into self, use self afterwards, if exists
   // no dep just install and return
   // has dep:
@@ -53,10 +49,11 @@ function insert(root:TaskRec, rec:TaskRec, depKeys?:Array<string>, depi: number 
   //     no: dep on root
   //       make dummy node dep on root
   //       dep on that dummy node
+  //   if depending on root, rm that
 
   let recRef = rec;
   let useExisting = false;
-  if (depi <= 0 && root.nexts) {
+  if (root.nexts) {
       root.nexts && Object.keys(root.nexts).findIndex((kk) => {
       const node = root.nexts && root.nexts[kk]; // to make flow happy
       if (node && node.key === rec.key) {
@@ -71,32 +68,39 @@ function insert(root:TaskRec, rec:TaskRec, depKeys?:Array<string>, depi: number 
     });
   }
 
-  const key = depKeys && depKeys[depi];
-  if (!key && useExisting) {
-    return;
-  }
-
-  if (!key) {
-    addDep(root, recRef);
-    return;
-  }
-
-  let dep:TaskRec|null = null;
-  traverse(root, (node) => {
-    if (node.key === key) {
-      dep = node;
-      return true;
+  if (!depKeys || !depKeys.length) {
+    if (!useExisting) {
+      addDep(root, recRef);
     }
-    return false;
-  });
-
-  if (dep) {
-    addDep(dep, recRef);
-  } else {
-    const dummyDep = { key, task:DUMMY_TASK };
-    addDep(root, dummyDep);
-    addDep(dummyDep, recRef);
+    return;
   }
+
+  let depi = 0;
+  do {
+    const key = depKeys[depi];
+    if (!key) {
+      throw new Error('invalid args');
+    }
+
+    let dep: TaskRec | null = null;
+    traverse(root, (node) => {
+      if (node.key === key) {
+        dep = node;
+        return true;
+      }
+      return false;
+    });
+
+    if (dep) {
+      addDep(dep, recRef);
+    } else {
+      const dummyDep = { key, task: DUMMY_TASK };
+      addDep(root, dummyDep);
+      addDep(dummyDep, recRef);
+    }
+
+    depi += 1;
+  } while(depi < depKeys.length);
 
   if (root.nexts && root.nexts[recRef.key]) {
     delete root.nexts[recRef.key];
@@ -104,8 +108,6 @@ function insert(root:TaskRec, rec:TaskRec, depKeys?:Array<string>, depi: number 
   if (recRef.deps && recRef.deps[root.key]) {
     delete recRef.deps[root.key];
   }
-
-  insert(root, recRef, depKeys, depi + 1);
 }
 
 function addDep(dependant:TaskRec, depender:TaskRec) {
@@ -133,7 +135,7 @@ function traverseBfs(root:TaskRec, visitor:(node:TaskRec) => void) {
   }
 }
 
-function buildGtask(root:Task) {
+function buildGtask(root:TaskRec) {
     const ret = [];
     root.result = root.task();
 
@@ -198,6 +200,7 @@ export default class TaskScheduler {
   hasFinished: bool
   warnedFinish: bool
   root:TaskRec
+  results: Promise<{ [key:string]: TaskRet }>
 
   constructor() {
     this.root = {
@@ -217,7 +220,7 @@ export default class TaskScheduler {
       key:name,
       task,
     };
-    insert(this.root, t, deps, 0);
+    insert(this.root, t, deps);
     return t;
   }
 
